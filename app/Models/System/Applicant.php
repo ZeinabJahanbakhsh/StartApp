@@ -2,50 +2,46 @@
 
 namespace App\Models\System;
 
+use App\Models\Base\Label;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
-use App\Models\Base\Label;
 
 class Applicant extends Model
 {
     protected $fillable = [
         'mobile',
         'national_code',
+        'issue_no'
     ];
 
     protected $casts = [
         'issue_no' => 'integer'
     ];
 
-
-    /*
+   /*
    |--------------------------------------------------------------------------
    |                                 Relations
    |--------------------------------------------------------------------------
    */
 
-    public function credential(): HasMany
+    public function credentials(): HasMany
     {
         return $this->hasMany(Credential::class);
     }
 
-    public function address(): HasMany
+    public function addresses(): HasMany
     {
         return $this->hasMany(Address::class);
     }
 
     public function labels(): BelongsToMany
     {
-        return $this->belongsToMany(Label::class, 'applicant_label')->withTimestamps();
+        return $this->belongsToMany(Label::class/*, 'applicant_label'*/)->withTimestamps();
     }
 
-    public function attachment(): HasMany
+    public function attachments(): HasMany
     {
         return $this->hasMany(Attachment::class);
     }
-
-
-
 }

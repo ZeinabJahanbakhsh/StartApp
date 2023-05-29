@@ -11,7 +11,7 @@ use App\Models\Base\Label;
 use App\Models\System\Credential;
 use Arr;
 use Illuminate\Http\Request;
-use App\Models\system\Applicant as ApplicantModel;
+use App\Models\system\Applicant;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -19,7 +19,6 @@ use Illuminate\Validation\Rule;
 
 class ApplicantController extends Controller
 {
-
     /**
      * @param Request $request
      * @return AnonymousResourceCollection
@@ -33,12 +32,13 @@ class ApplicantController extends Controller
         ] = $request->all();
 
         return ApplicantResource::collection(
-            ApplicantModel::with([
-                'credential',
-                'address',
-                'labels',
-                'attachment'
-            ])
+            Applicant::query()
+                          ->with([
+                              'labels',
+                              'addresses'    => ['city'],
+                              'attachments' => ['attachmentType'],
+                              'credentials'
+                          ])
                           ->paginate(
                               $per_page ?? 10,
                               ['*'],
@@ -48,23 +48,22 @@ class ApplicantController extends Controller
 
     }
 
-
     /**
-     * @param ApplicantModel $applicant
-     * @return SingleApplicantResource
+     * @param Applicant $applicant
+     * @return ApplicantResource
      */
-    public function get(ApplicantModel $applicant)
+    public function get(Applicant $applicant)
     {
         $applicant->load([
             'labels',
-            'address',
-            'attachment',
-            'credential'
+            'addresses'    => ['city'],
+            'attachments' => ['attachmentType'],
+            'credentials'
         ]);
 
-        return new SingleApplicantResource($applicant->find($applicant->id));
+        return new ApplicantResource($applicant);
+        //return new SingleApplicantResource($applicant->find($applicant->id));
     }
-
 
     /**
      * @param Request $request
@@ -76,13 +75,13 @@ class ApplicantController extends Controller
 
         DB::transaction(function () use ($request) {
 
-            $applicant = ApplicantModel::forceCreate([
+            $applicant = Applicant::forceCreate([
                 'mobile'        => $request->input('mobile'),
                 'national_code' => $request->input('national_code'),
                 'issue_no'      => $request->input('issue_no')
             ]);
 
-            $applicant->credential()->createMany(
+            $applicant->credentials()->createMany(
                 $request->collect('credentials')
                         ->map(fn($item) => Arr::only($item, [
                             'title',
@@ -92,7 +91,7 @@ class ApplicantController extends Controller
                         ]))
             );
 
-            $applicant->address()->createMany(
+            $applicant->addresses()->createMany(
                 $request->collect('addresses')
                         ->map(fn($item) => Arr::only($item, [
                             'title',
@@ -101,17 +100,15 @@ class ApplicantController extends Controller
                         ]))
             );
 
-            $tagIds = [];
-            $request->collect('labels')->each(function ($item) use (&$tagIds) {
-                $tagIds[] = Label::firstOrCreate([
-                    'name' => $item
-                ])->id;
+            $labelIds = [];
+            $request->collect('labels')->each(function ($item) use (&$labelIds) {
+                $labelIds[] = Label::firstOrCreate(['name' => $item])->id;
             });
 
-            $applicant->labels()->sync($tagIds);
+            $applicant->labels()->sync($labelIds);
 
-            $applicant->attachment()->createMany(
-                $request->collect('attachments')
+            $applicant->attachments()->createMany(
+                $request->collect('attachments')->toArray()
             );
 
         });
@@ -122,13 +119,12 @@ class ApplicantController extends Controller
 
     }
 
-
     /**
      * @param Request        $request
-     * @param ApplicantModel $applicant
+     * @param Applicant $applicant
      * @return array
      */
-    public function update(Request $request, ApplicantModel $applicant)
+    public function update(Request $request, Applicant $applicant)
     {
         $this->validationRequest($request, $applicant);
 
@@ -140,25 +136,25 @@ class ApplicantController extends Controller
                 'issue_no'      => $request->input('issue_no')
             ]);
 
-
             $newCredentials     = $request->collect('credentials')->filter(fn($item) => !isset($item['id']));
             $updatedCredentials = $request->collect('credentials')->filter(fn($item) => isset($item['id']));
 
-            $applicant->credential()->whereNotIn('id', $updatedCredentials->pluck('id'))->delete();
+            $applicant->credentials()->whereNotIn('id', $updatedCredentials->pluck('id')/*->toArray()*/)->delete();
 
-            $updatedCredentials->each(fn($item) => $applicant->credential()
-                                                             ->where('id', $item['id'])
-                                                             ->update(Arr::only($item, [
-                                                                 'title',
-                                                                 'password',
-                                                                 //TODO: username
-                                                                 'two_fa_code'
-                                                             ]))
+            $updatedCredentials->each(fn(array $item) => $applicant->credential()
+                                                                   ->where('id', $item['id'])
+                                                                   ->update(Arr::only($item, [
+                                                                       'title',
+                                                                       'password',
+                                                                       'username',
+                                                                       'two_fa_code'
+                                                                   ]))
 
             );
 
             if ($newCredentials->count() > 0) {
-                $newCredentials->each(fn($item) => $applicant->credential()
+                //createMany
+                $newCredentials->each(fn($item) => $applicant->credentials()
                                                              ->create(Arr::only($item, [
                                                                  'title',
                                                                  'username',
@@ -168,13 +164,12 @@ class ApplicantController extends Controller
                 );
             }
 
-
             $newAddresses     = $request->collect('addresses')->filter(fn($item) => !isset($item['id']));
             $updatedAddresses = $request->collect('addresses')->filter(fn($item) => isset($item['id']));
 
-            $applicant->address()->whereNotIn('id', $updatedAddresses->pluck('id'))->delete();
+            $applicant->addresses()->whereNotIn('id', $updatedAddresses->pluck('id')/*->toArray()*/)->delete();
 
-            $updatedAddresses->each(fn($item) => $applicant->address()
+            $updatedAddresses->each(fn($item) => $applicant->addresses()
                                                            ->where('id', $item['id'])
                                                            ->update(Arr::only($item, [
                                                                'title',
@@ -185,32 +180,29 @@ class ApplicantController extends Controller
             );
 
             if ($newAddresses->count() > 0) {
-                $newAddresses->each(fn($item) => $applicant->address()
-                                                           ->create(Arr::only($item, [
-                                                               'title',
-                                                               'city_id',
-                                                               'postal_code'
-                                                           ]))
+                //createMany
+                $newAddresses->each(fn(array $item) => $applicant->addresses()
+                                                                 ->create(Arr::only($item, [
+                                                                     'title',
+                                                                     'city_id',
+                                                                     'postal_code'
+                                                                 ]))
                 );
             }
 
-
             $labelIds = [];
             $request->collect('labels')->each(function ($item) use (&$labelIds) {
-                $labelIds[] = Label::firstOrCreate([
-                    'name' => $item
-                ])->id;
+                $labelIds[] = Label::firstOrCreate(['name' => $item])->id;
             });
 
             $applicant->labels()->sync($labelIds);
 
-
             $newAttachments     = $request->collect('attachments')->filter(fn($item) => !isset($item['id']));
             $updatedAttachments = $request->collect('attachments')->filter(fn($item) => isset($item['id']));
 
-            $applicant->attachment()->whereNotIn('id', $updatedAttachments->pluck('id'))->delete();
+            $applicant->attachments()->whereNotIn('id', $updatedAttachments->pluck('id')/*->toArray()*/)->delete();
 
-            $updatedAttachments->each(fn($item) => $applicant->attachment()
+            $updatedAttachments->each(fn($item) => $applicant->attachments()
                                                              ->where('id', $item['id'])
                                                              ->update(Arr::only($item, [
                                                                  'attachment_type_id',
@@ -219,11 +211,11 @@ class ApplicantController extends Controller
             );
 
             if ($newAttachments->count() > 0) {
-                $newAttachments->each(fn($item) => $applicant->attachment()
-                                                             ->forceCreate(Arr::only($item, [
-                                                                 'attachment_type_id',
-                                                                 'file_content'
-                                                             ]))
+                $newAttachments->each(fn(array $item) => $applicant->attachments()
+                                                                   ->forceCreate(Arr::only($item, [
+                                                                       'attachment_type_id',
+                                                                       'file_content'
+                                                                   ]))
                 );
             }
 
@@ -235,19 +227,18 @@ class ApplicantController extends Controller
 
     }
 
-
     /**
-     * @param ApplicantModel $applicant
+     * @param Applicant $applicant
      * @return array
      */
-    public function destroy(ApplicantModel $applicant)
+    public function destroy(Applicant $applicant)
     {
         DB::transaction(function () use ($applicant) {
 
-            $applicant->address()->delete();
-            $applicant->credential()->delete();
-            $applicant->attachment()->delete();
-            $applicant->labels()->sync([]);
+            $applicant->addresses()->delete();
+            $applicant->credentials()->delete();
+            $applicant->attachments()->delete();
+            $applicant->labels()->sync([]); //score=20
             $applicant->delete();
 
         });
@@ -258,28 +249,29 @@ class ApplicantController extends Controller
 
     }
 
-
     /**
-     * @param Request $request
-     * @param null    $applicant
+     * @param Request             $request
+     * @param Applicant|null $applicant
      * @return void
      */
-    private function validationRequest(Request $request, $applicant = null)
+    private function validationRequest(Request $request, Applicant $applicant = null): void
     {
         $this->validate($request, [
             'mobile'                           => ['required', 'ir_mobile'],
             'national_code'                    => ['required', 'ir_national_code'],
-            'issue_no'                         => ['nullable', 'digits_between:1,7'],
+            'issue_no'                         => ['nullable', 'string', 'min:1', 'max:10'],
             'credentials.*'                    => ['required', 'array'],
             'credentials.*.title'              => ['nullable', 'persian_alpha', 'max:50'],
-            'credentials.*.username'           => ['max:50', Rule::requiredIf(fn() => empty($applicant) && is_null($applicant)), Rule::unique(Credential::class, 'username')],
+            'credentials.*.username'           => ['max:50', Rule::requiredIf(fn() => empty($applicant)), Rule::unique(Credential::class,
+                'username')->ignore($applicant)],
             'credentials.*.password'           => ['required', 'max:50', 'min:5'],
             'credentials.*.two_fa_code'        => ['nullable', 'max:50'],
             'address.*'                        => ['required', 'array'],
             'address.*.title'                  => ['required', 'persian_alpha', 'max:50'],
             'address.*.city_id'                => ['nullable', Rule::exists(City::class)],
-            'address.*.postal_code'            => ['nullable', 'max:10'],
+            'address.*.postal_code'            => ['nullable', 'ir_postal_code'],
             'labels'                           => ['required', 'array'],
+            'labels.*'                         => ['required', 'string', 'min:2', 'max:30'],
             'attachments.*'                    => ['required', 'array'],
             'attachments.*.attachment_type_id' => ['required', Rule::exists(AttachmentType::class, 'id')],
             'attachments.*.file_content'       => ['nullable', /*'base64image'*/],  //TODO: crazybooot/base64-validation

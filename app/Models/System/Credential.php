@@ -5,21 +5,20 @@ namespace App\Models\System;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-
 class Credential extends Model
 {
     protected $fillable = [
         'username',
         'title',
-        'password'
+        'password',
+        'two_fa_code'
     ];
 
     protected $casts = [
         'applicant_id' => 'integer'
     ];
 
-
-    /*
+   /*
    |--------------------------------------------------------------------------
    |                                 Relations
    |--------------------------------------------------------------------------
@@ -29,6 +28,4 @@ class Credential extends Model
     {
         return $this->belongsTo(Applicant::class);
     }
-
-
 }

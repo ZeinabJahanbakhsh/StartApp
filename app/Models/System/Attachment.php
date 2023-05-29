@@ -34,6 +34,4 @@ class Attachment extends Model
     {
         return $this->belongsTo(Applicant::class);
     }
-
-
 }
