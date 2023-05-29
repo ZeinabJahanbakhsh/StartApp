@@ -34,7 +34,7 @@ class ApplicantResource extends JsonResource
             'national_code' => $this->national_code,
             'issue_no'      => $this->issue_no,
 
-            'credentials' => $this->credential->map(fn(Credential $credential) => [
+            'credentials' => $this->credentials->map(fn(Credential $credential) => [
                 'id'          => $credential->id,
                 'title'       => $credential->title,
                 'username'    => $credential->username,
@@ -42,7 +42,7 @@ class ApplicantResource extends JsonResource
                 'two_fa_code' => $credential->two_fa_code
             ]),
 
-            'address' => $this->address->map(fn(Address $address) => [
+            'address' => $this->addresses->map(fn(Address $address) => [
                 'id'          => $address->id,
                 'title'       => $address->title,
                 'city_id'     => $address->city_id,
@@ -52,7 +52,7 @@ class ApplicantResource extends JsonResource
             //'labels' => $this->labels->map(fn(Label $label) => $label['name']),
             'labels' => $this->labels->pluck('name'),
 
-            'attachments' => $this->attachment->map(fn(Attachment $attachment) => [
+            'attachments' => $this->attachments->map(fn(Attachment $attachment) => [
                 'id'                 => $attachment->id,
                 'attachment_type_id' => $attachment->attachment_type_id,
                 'file_content'       => $attachment->file_content,
